@@ -484,6 +484,14 @@ jobs:
           # Prepare commit message
           COMMIT_MSG=$(printf "Swift Book upstream: %s\n%s\n\nUpstream commit: https://github.com/swiftlang/swift-book/commit/%s" "$LATEST_SHA_SHORT" "$LATEST_MSG" "$LATEST_SHA")
           
+          # Debug: show commit message and variables
+          echo "Commit message:"
+          echo "$COMMIT_MSG"
+          echo "Branch: $BRANCH_NAME"
+          echo "Latest SHA: $LATEST_SHA"
+          echo "Latest SHA Short: $LATEST_SHA_SHORT"
+          echo "Latest Message: $LATEST_MSG"
+          
           # Get current branch name
           BRANCH_NAME="${GITHUB_REF#refs/heads/}"
           
@@ -506,33 +514,74 @@ jobs:
               sha=""
             fi
             
-            # Commit the file
+            # Commit the file using jq to properly escape JSON
             echo "Committing $file_path..."
-            curl -s -X PUT -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -d "{\"message\":\"$COMMIT_MSG\", \"content\":\"$content\", \"branch\":\"$BRANCH_NAME\", \"sha\":\"$sha\"}" \
-              "https://api.github.com/repos/${{ github.repository }}/contents/$file_path"
+            if [ -n "$sha" ]; then
+              # File exists, include SHA for update
+              json_payload=$(jq -n \
+                --arg message "$COMMIT_MSG" \
+                --arg content "$content" \
+                --arg branch "$BRANCH_NAME" \
+                --arg sha "$sha" \
+                '{"message": $message, "content": $content, "branch": $branch, "sha": $sha}')
+              echo "Updating existing file with SHA: $sha"
+            else
+              # New file, don't include SHA
+              json_payload=$(jq -n \
+                --arg message "$COMMIT_MSG" \
+                --arg content "$content" \
+                --arg branch "$BRANCH_NAME" \
+                '{"message": $message, "content": $content, "branch": $branch}')
+              echo "Creating new file"
+            fi
+            
+            # Debug: show JSON structure (without content)
+            debug_json=$(echo "$json_payload" | jq 'del(.content)')
+            echo "JSON payload structure: $debug_json"
+            
+            response=$(curl -s -w "%{http_code}" -X PUT -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "$json_payload" \
+              "https://api.github.com/repos/${{ github.repository }}/contents/$file_path")
+            
+            # Extract status code and response body
+            http_code="${response: -3}"
+            response_body="${response%???}"
+            
+            if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 201 ]; then
+              echo "✅ Successfully committed $file_path"
+            else
+              echo "❌ Failed to commit $file_path (HTTP $http_code):"
+              echo "$response_body"
+              exit 1
+            fi
           }
           
           # Commit PDFs
+          echo "Committing PDFs from swift-book/latest/..."
           for pdf in swift-book/latest/*.pdf; do
             if [ -f "$pdf" ]; then
+              echo "Processing: $pdf"
               commit_file "$pdf"
             fi
           done
           
           # Commit tagged PDFs if they exist
           if [ -n "${{ steps.swiftbook_sha.outputs.tag_name }}" ]; then
+            echo "Committing PDFs from swift-book/${{ steps.swiftbook_sha.outputs.tag_name }}/..."
             for pdf in swift-book/${{ steps.swiftbook_sha.outputs.tag_name }}/*.pdf; do
               if [ -f "$pdf" ]; then
+                echo "Processing: $pdf"
                 commit_file "$pdf"
               fi
             done
           fi
           
           # Commit the SHA file
+          echo "Committing SHA file..."
           commit_file ".github/sha"
           
-          echo "All files committed successfully!"
+          echo "✅ All files committed successfully!"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   
