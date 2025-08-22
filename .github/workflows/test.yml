@@ -213,7 +213,7 @@ jobs:
           echo "Commit date (raw): $COMMIT_DATE_RAW"
           
           # Format commit date for display
-          COMMIT_DATE=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE_RAW" '+%B %d, %Y' 2>/dev/null || echo "$COMMIT_DATE_RAW")
+          COMMIT_DATE=$(TZ='America/Los_Angeles' date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE_RAW" '+%B %d, %Y at %I:%M %p PT' 2>/dev/null || echo "$COMMIT_DATE_RAW") 
           echo "Commit date (formatted): $COMMIT_DATE"
           
           # Export as env vars
@@ -252,23 +252,36 @@ jobs:
             
             # Extract the published date from the release
             RELEASE_DATE=$(jq -r '.tagger.date' <<< "$RELEASE_JSON")
+            TAGGED_MSG=$(jq -r '.message' <<< "$RELEASE_JSON")
             if [ "$RELEASE_DATE" != "null" ] && [ -n "$RELEASE_DATE" ]; then
-              FORMATTED_DATE=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$RELEASE_DATE" '+%B %d, %Y' 2>/dev/null || echo "$RELEASE_DATE")
-              echo "Release date: $FORMATTED_DATE"
+              TAGGED_DATE=$(TZ='America/Los_Angeles' date -j -f "%Y-%m-%dT%H:%M:%SZ" "$RELEASE_DATE" '+%B %d, %Y at %I:%M %p PT' 2>/dev/null || echo "$RELEASE_DATE")
+              echo "Release date: $TAGGED_DATE"
               echo "RELEASE_DATE=$RELEASE_DATE" >> $GITHUB_ENV
-              echo "FORMATTED_DATE=$FORMATTED_DATE" >> $GITHUB_ENV
+              echo "TAGGED_DATE=$TAGGED_DATE" >> $GITHUB_ENV
+              echo "TAGGED_MSG<<EOF" >> $GITHUB_ENV
+              echo "$TAGGED_MSG" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
               echo "release_date=$RELEASE_DATE" >> $GITHUB_OUTPUT
-              echo "formatted_date=$FORMATTED_DATE" >> $GITHUB_OUTPUT
+              echo "tagged_date=$TAGGED_DATE" >> $GITHUB_OUTPUT
+              echo "tagged_msg<<EOF" >> $GITHUB_OUTPUT
+              echo "$TAGGED_MSG" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
             else
               echo "No release date found, using commit date instead"
               # Fallback to commit date if no release date is found
               COMMIT_DATE=$(echo "$COMMIT_JSON" | jq -r '.commit.author.date')
-              FORMATTED_DATE=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE" '+%B %d, %Y' 2>/dev/null || echo "$COMMIT_DATE")
-              echo "Commit date: $FORMATTED_DATE"
+              TAGGED_DATE=$(TZ='America/Los_Angeles' date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE" '+%B %d, %Y at %I:%M %p PT' 2>/dev/null || echo "$COMMIT_DATE")
+              echo "Commit date: $TAGGED_DATE"
               echo "RELEASE_DATE=$COMMIT_DATE" >> $GITHUB_ENV
-              echo "FORMATTED_DATE=$FORMATTED_DATE" >> $GITHUB_ENV
+              echo "TAGGED_DATE=$TAGGED_DATE" >> $GITHUB_ENV
+              echo "TAGGED_MSG<<EOF" >> $GITHUB_ENV
+              echo "$TAGGED_MSG" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
               echo "release_date=$COMMIT_DATE" >> $GITHUB_OUTPUT
-              echo "formatted_date=$FORMATTED_DATE" >> $GITHUB_OUTPUT
+              echo "tagged_date=$TAGGED_DATE" >> $GITHUB_OUTPUT
+              echo "tagged_msg<<EOF" >> $GITHUB_OUTPUT
+              echo "$TAGGED_MSG" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
             fi
           fi
 
@@ -536,15 +549,17 @@ jobs:
             const latestSha = process.env.LATEST_SHA;
             const tagName = process.env.TAG_NAME;
             const commitDate = process.env.COMMIT_DATE;
+            const taggedDate = process.env.TAGGED_DATE;
 
             let commitMessage = `Swift Book upstream: ${shaShort}
             ${latestMsg}
 
-            Upstream commit: https://github.com/swiftlang/swift-book/commit/${latestSha}`;
+            Upstream commit: https://github.com/swiftlang/swift-book/commit/${latestSha}
+            on ${commitDate}`;
 
             // Add tag and commit date information if available
             if (tagName && commitDate) {
-              commitMessage += `\n\nTag: ${tagName} (commit date: ${commitDate})`;
+              commitMessage += `\n\nReleased to docs.swift.org with tag ${tagName} on ${taggedDate}`;
             }
 
             // Collect files -> will become tree entries
@@ -665,6 +680,7 @@ jobs:
           LATEST_SHA: ${{ env.LATEST_SHA }}
           TAG_NAME: ${{ steps.swiftbook_sha.outputs.tag_name }}
           COMMIT_DATE: ${{ steps.swiftbook_sha.outputs.commit_date }}
+          TAGGED_DATE: ${{ steps.swiftbook_sha.outputs.tagged_date }}
 
       - name: Tag commit if upstream is tagged (via GitHub API, overwrite if exists)
         if: steps.check_sha.outputs.skip != 'true' && steps.swiftbook_sha.outputs.tag_name != ''
@@ -674,14 +690,18 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const tagName = process.env.TAG_NAME;
-            const commitSha = process.env.COMMIT_SHA; // ✅ direct from commit step
+            const commitSha = process.env.COMMIT_SHA;
+            const taggedDate = process.env.TAGGED_DATE;
+            const taggedMsg = process.env.TAGGED_MSG;
       
             // Create annotated tag object
             const { data: tag } = await github.rest.git.createTag({
               owner,
               repo,
               tag: tagName,
-              message: `Tagging upstream release ${tagName}`,
+              message: `Swift Book upstream tag ${tagName}, originally added on ${taggedDate}.
+              
+              ${taggedMsg}`,
               object: commitSha,
               type: "commit",
               tagger: {
@@ -717,7 +737,8 @@ jobs:
         env:
           TAG_NAME: ${{ steps.swiftbook_sha.outputs.TAG_NAME }}
           COMMIT_SHA: ${{ steps.commit_pdfs.outputs.commit_sha }}
-
+          TAGGED_DATE: ${{ steps.swiftbook_sha.outputs.tagged_date }}
+          TAGGED_MSG: ${{ steps.swiftbook_sha.outputs.tagged_msg }}
 
       - name: Create release and upload PDFs if upstream is tagged
         if: steps.check_sha.outputs.skip != 'true' && steps.swiftbook_sha.outputs.TAG_NAME != ''
@@ -728,7 +749,7 @@ jobs:
           body: |
             Release for Swift Book upstream tag ${{ steps.swiftbook_sha.outputs.TAG_NAME }}
             
-            Originally released: ${{ steps.swiftbook_sha.outputs.formatted_date }}
+            Originally released on ${{ steps.swiftbook_sha.outputs.tagged_date }}.
 
             https://github.com/swiftlang/swift-book/releases/tag/${{ steps.swiftbook_sha.outputs.TAG_NAME }}
           files: |
@@ -738,4 +759,4 @@ jobs:
             swift-book/${{ steps.swiftbook_sha.outputs.TAG_NAME }}/swift_book_print_dark.pdf
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FORMATTED_DATE: ${{ steps.swiftbook_sha.outputs.formatted_date }}
+          TAGGED_DATE: ${{ steps.swiftbook_sha.outputs.tagged_date }}
