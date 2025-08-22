@@ -207,19 +207,28 @@ jobs:
           LATEST_SHA_LOCAL=$(echo "$COMMIT_JSON" | jq -r '.sha')
           LATEST_SHA_SHORT=$(echo "$LATEST_SHA_LOCAL" | cut -c1-7)
           LATEST_MSG=$(echo "$COMMIT_JSON" | jq -r '.commit.message')
+          COMMIT_DATE_RAW=$(echo "$COMMIT_JSON" | jq -r '.commit.author.date')
           echo "Commit SHA: $LATEST_SHA_SHORT"
           echo "Commit message: $LATEST_MSG"
+          echo "Commit date (raw): $COMMIT_DATE_RAW"
+          
+          # Format commit date for display
+          COMMIT_DATE=$(date -d "$COMMIT_DATE_RAW" '+%B %d, %Y' 2>/dev/null || echo "$COMMIT_DATE_RAW")
+          echo "Commit date (formatted): $COMMIT_DATE"
+          
           # Export as env vars
           echo "LATEST_SHA=$LATEST_SHA_LOCAL" >> $GITHUB_ENV
           echo "LATEST_SHA_SHORT=$LATEST_SHA_SHORT" >> $GITHUB_ENV
           echo "LATEST_MSG<<EOF" >> $GITHUB_ENV
           echo "$LATEST_MSG" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+          echo "COMMIT_DATE=$COMMIT_DATE" >> $GITHUB_ENV
           # Export as outputs
           echo "latest_sha=$LATEST_SHA_LOCAL" >> $GITHUB_OUTPUT
           echo "latest_msg<<EOF" >> $GITHUB_OUTPUT
           echo "$LATEST_MSG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+          echo "commit_date=$COMMIT_DATE" >> $GITHUB_OUTPUT
           # Save SHA to a file
           echo "$LATEST_SHA_LOCAL" > latest-swift-book-sha-latest.txt
           # Fetch tags that point to this commit
@@ -229,6 +238,35 @@ jobs:
           echo "Tag name: $TAG_NAME"
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          
+          # If we have a tag, fetch the release date from the GitHub API
+          if [ -n "$TAG_NAME" ]; then
+            echo "Fetching release date for tag: $TAG_NAME"
+            RELEASE_JSON=$(curl -s -H "Authorization: Bearer ${{ github.token }}" \
+              "https://api.github.com/repos/swiftlang/swift-book/releases/tags/$TAG_NAME")
+            
+            # Extract the published date from the release
+            RELEASE_DATE=$(echo "$RELEASE_JSON" | jq -r '.published_at')
+            if [ "$RELEASE_DATE" != "null" ] && [ -n "$RELEASE_DATE" ]; then
+              # Format the date for display (convert ISO 8601 to readable format)
+              FORMATTED_DATE=$(date -d "$RELEASE_DATE" '+%B %d, %Y' 2>/dev/null || echo "$RELEASE_DATE")
+              echo "Release date: $FORMATTED_DATE"
+              echo "RELEASE_DATE=$RELEASE_DATE" >> $GITHUB_ENV
+              echo "FORMATTED_DATE=$FORMATTED_DATE" >> $GITHUB_ENV
+              echo "release_date=$RELEASE_DATE" >> $GITHUB_OUTPUT
+              echo "formatted_date=$FORMATTED_DATE" >> $GITHUB_OUTPUT
+            else
+              echo "No release date found, using commit date instead"
+              # Fallback to commit date if no release date is found
+              COMMIT_DATE=$(echo "$COMMIT_JSON" | jq -r '.commit.author.date')
+              FORMATTED_DATE=$(date -d "$COMMIT_DATE" '+%B %d, %Y' 2>/dev/null || echo "$COMMIT_DATE")
+              echo "Commit date: $FORMATTED_DATE"
+              echo "RELEASE_DATE=$COMMIT_DATE" >> $GITHUB_ENV
+              echo "FORMATTED_DATE=$FORMATTED_DATE" >> $GITHUB_ENV
+              echo "release_date=$COMMIT_DATE" >> $GITHUB_OUTPUT
+              echo "formatted_date=$FORMATTED_DATE" >> $GITHUB_OUTPUT
+            fi
+          fi
 
 
       - name: Install TeX Live (cached)
@@ -492,11 +530,18 @@ jobs:
             const shaShort = process.env.LATEST_SHA_SHORT;
             const latestMsg = process.env.LATEST_MSG;
             const latestSha = process.env.LATEST_SHA;
+            const tagName = process.env.TAG_NAME;
+            const commitDate = process.env.COMMIT_DATE;
 
-            const commitMessage = `Swift Book upstream: ${shaShort}
+            let commitMessage = `Swift Book upstream: ${shaShort}
             ${latestMsg}
 
             Upstream commit: https://github.com/swiftlang/swift-book/commit/${latestSha}`;
+
+            // Add tag and commit date information if available
+            if (tagName && commitDate) {
+              commitMessage += `\n\nTag: ${tagName} (commit date: ${commitDate})`;
+            }
 
             // Collect files -> will become tree entries
             const treeEntries = [];
@@ -541,7 +586,6 @@ jobs:
             }
 
             // PDFs in tag folder
-            const tagName = process.env.TAG_NAME;
             if (tagName) {
               const tagDir = `swift-book/${tagName}`;
               if (fs.existsSync(tagDir)) {
@@ -616,67 +660,61 @@ jobs:
           LATEST_MSG: ${{ env.LATEST_MSG }}
           LATEST_SHA: ${{ env.LATEST_SHA }}
           TAG_NAME: ${{ steps.swiftbook_sha.outputs.tag_name }}
+          COMMIT_DATE: ${{ steps.swiftbook_sha.outputs.commit_date }}
 
-      # - name: Tag commit if upstream is tagged (via GitHub API, overwrite if exists)
-      #   if: steps.check_sha.outputs.skip != 'true' && steps.swiftbook_sha.outputs.tag_name != ''
-      #   uses: actions/github-script@v7
-      #   with:
-      #     script: |
-      #       const owner = context.repo.owner;
-      #       const repo = context.repo.repo;
-      #       const tagName = process.env.TAG_NAME;
-      #       const commitSha = process.env.COMMIT_SHA; // ✅ direct from commit step
-      
-      #       // Create annotated tag object
-      #       const { data: tag } = await github.rest.git.createTag({
-      #         owner,
-      #         repo,
-      #         tag: tagName,
-      #         message: `Tagging upstream release ${tagName}`,
-      #         object: commitSha,
-      #         type: "commit",
-      #         tagger: {
-      #           name: "github-actions[bot]",
-      #           email: "41898282+github-actions[bot]@users.noreply.github.com",
-      #           date: new Date().toISOString(),
-      #         },
-      #       });
-      
-      #       // Try to create or update the tag ref
-      #       try {
-      #         await github.rest.git.createRef({
-      #           owner,
-      #           repo,
-      #           ref: `refs/tags/${tagName}`,
-      #           sha: tag.sha,
-      #         });
-      #         console.log(`Created new tag ${tagName} → ${commitSha}`);
-      #       } catch (err) {
-      #         if (err.status === 422) {
-      #           await github.rest.git.updateRef({
-      #             owner,
-      #             repo,
-      #             ref: `tags/${tagName}`,
-      #             sha: tag.sha,
-      #             force: true,
-      #           });
-      #           console.log(`Updated existing tag ${tagName} → ${commitSha}`);
-      #         } else {
-      #           throw err;
-      #         }
-      #       }
-      #   env:
-      #     TAG_NAME: ${{ steps.swiftbook_sha.outputs.TAG_NAME }}
-      #     COMMIT_SHA: ${{ steps.commit_pdfs.outputs.commit_sha }}
-      - name: Bump version and push tag
-        id: tag_version
-        uses: mathieudutour/github-tag-action@v6.2
+      - name: Tag commit if upstream is tagged (via GitHub API, overwrite if exists)
+        if: steps.check_sha.outputs.skip != 'true' && steps.swiftbook_sha.outputs.tag_name != ''
+        uses: actions/github-script@v7
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          commit_sha: ${{ steps.commit_pdfs.outputs.commit_sha }}
-          custom_tag: ${{ steps.swiftbook_sha.outputs.TAG_NAME }}
-          create_annotated_tag: true
-  
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tagName = process.env.TAG_NAME;
+            const commitSha = process.env.COMMIT_SHA; // ✅ direct from commit step
+      
+            // Create annotated tag object
+            const { data: tag } = await github.rest.git.createTag({
+              owner,
+              repo,
+              tag: tagName,
+              message: `Tagging upstream release ${tagName}`,
+              object: commitSha,
+              type: "commit",
+              tagger: {
+                name: "github-actions[bot]",
+                email: "41898282+github-actions[bot]@users.noreply.github.com",
+                date: new Date().toISOString(),
+              },
+            });
+      
+            // Try to create or update the tag ref
+            try {
+              await github.rest.git.createRef({
+                owner,
+                repo,
+                ref: `refs/tags/${tagName}`,
+                sha: tag.sha,
+              });
+              console.log(`Created new tag ${tagName} → ${commitSha}`);
+            } catch (err) {
+              if (err.status === 422) {
+                await github.rest.git.updateRef({
+                  owner,
+                  repo,
+                  ref: `tags/${tagName}`,
+                  sha: tag.sha,
+                  force: true,
+                });
+                console.log(`Updated existing tag ${tagName} → ${commitSha}`);
+              } else {
+                throw err;
+              }
+            }
+        env:
+          TAG_NAME: ${{ steps.swiftbook_sha.outputs.TAG_NAME }}
+          COMMIT_SHA: ${{ steps.commit_pdfs.outputs.commit_sha }}
+
+
       - name: Create release and upload PDFs if upstream is tagged
         if: steps.check_sha.outputs.skip != 'true' && steps.swiftbook_sha.outputs.TAG_NAME != ''
         uses: softprops/action-gh-release@v2
@@ -685,6 +723,8 @@ jobs:
           name: ${{ steps.swiftbook_sha.outputs.TAG_NAME }}
           body: |
             Release for Swift Book upstream tag ${{ steps.swiftbook_sha.outputs.TAG_NAME }}
+            
+            Originally released: ${{ steps.swiftbook_sha.outputs.formatted_date }}
 
             https://github.com/swiftlang/swift-book/releases/tag/${{ steps.swiftbook_sha.outputs.TAG_NAME }}
           files: |
@@ -694,3 +734,4 @@ jobs:
             swift-book/${{ steps.swiftbook_sha.outputs.TAG_NAME }}/swift_book_print_dark.pdf
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORMATTED_DATE: ${{ steps.swiftbook_sha.outputs.formatted_date }}
