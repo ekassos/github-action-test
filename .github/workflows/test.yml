@@ -7,14 +7,14 @@ on:
         description: 'Optional specific commit SHA of swift-book to build from'
         required: false
   schedule:
-    - cron: '50 * * * *'  # Every hour at :50
+    - cron: '*/5 * * * *'  # Every 5 minutes
 
 jobs:
   generate-pdfs:
     runs-on: ubuntu-latest
     steps:
-        - run: date -u && git rev-parse --abbrev-ref HEAD
 
         - name: Checkout repository
           uses: actions/checkout@v4
-  
+        
+        - run: date -u && git rev-parse --abbrev-ref HEAD
