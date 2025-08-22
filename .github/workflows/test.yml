@@ -56,12 +56,17 @@ jobs:
               
   generate-pdfs-alt:
     runs-on: ubuntu-latest
+    needs: generate-pdfs  # Run this job after the first one completes
     steps:
         - name: Checkout repository
           uses: actions/checkout@v4
           with:
-            persist-credentials: false
+            token: ${{ secrets.GITHUB_TOKEN }}
             fetch-depth: 0
+            
+        - name: Pull latest changes
+          run: |
+            git pull origin main
             
         - name: Make sample commit with proper authentication
           run: |
@@ -79,9 +84,6 @@ jobs:
             This commit was automatically generated and signed by the GitHub Actions bot.
             Timestamp: $(date)"
             
-        - name: Push changes
-          uses: ad-m/github-push-action@v0.8.0
-          with:
-            github_token: ${{ secrets.GITHUB_TOKEN }}
-            branch: ${{ github.ref }}
+            # Push directly with the token
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main
         
