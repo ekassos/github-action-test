@@ -296,15 +296,7 @@ jobs:
             if [ "$ACTIONS_STEP_DEBUG" = "true" ]; then
               "$@"
             else
-              # Capture stderr to check for errors
-              if ! "$@" > /dev/null 2>temp_error.log; then
-                echo "❌ Command failed: $*"
-                echo "Error output:"
-                cat temp_error.log
-                rm -f temp_error.log
-                exit 1
-              fi
-              rm -f temp_error.log
+              "$@" > /dev/null 2>&1
             fi
           }
 
