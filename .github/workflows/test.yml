@@ -699,9 +699,11 @@ jobs:
               owner,
               repo,
               tag: tagName,
-              message: `Swift Book upstream tag ${tagName}, originally added on ${taggedDate}.
+              message: `Swift Book upstream tag ${tagName}
               
-              ${taggedMsg}`,
+            Originally tagged on ${taggedDate}.
+            
+            ${taggedMsg}`,
               object: commitSha,
               type: "commit",
               tagger: {
@@ -749,7 +751,7 @@ jobs:
           body: |
             Release for Swift Book upstream tag ${{ steps.swiftbook_sha.outputs.TAG_NAME }}
             
-            Originally released on ${{ steps.swiftbook_sha.outputs.tagged_date }}.
+            Released to docs.swift.org on ${{ steps.swiftbook_sha.outputs.tagged_date }}.
 
             https://github.com/swiftlang/swift-book/releases/tag/${{ steps.swiftbook_sha.outputs.TAG_NAME }}
           files: |
