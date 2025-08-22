@@ -550,13 +550,18 @@ jobs:
                     content: pdfContent,
                     encoding: 'base64'
                   });
-                  treeItems.push({
-                    path: pdfPath,
-                    mode: '100644',
-                    type: 'blob',
-                    sha: pdfBlob.data.sha
-                  });
-                  console.log(`Successfully added PDF: ${pdfPath}`);
+                  
+                  if (pdfBlob && pdfBlob.data && pdfBlob.data.sha) {
+                    treeItems.push({
+                      path: pdfPath,
+                      mode: '100644',
+                      type: 'blob',
+                      sha: pdfBlob.data.sha
+                    });
+                    console.log(`Successfully added PDF: ${pdfPath}`);
+                  } else {
+                    console.log(`Failed to create blob for ${pdfPath}: Invalid blob response`);
+                  }
                 } catch (error) {
                   console.log(`Error processing PDF ${pdfPath}:`, error.message);
                 }
@@ -583,7 +588,7 @@ jobs:
                     const pdfBlob = await github.rest.git.createBlob({
                       owner: context.repo.owner,
                       repo: context.repo.repo,
-                      content: pdfContent,
+                      content: pdfContent.toString('base64'),
                       encoding: 'base64'
                     });
                     treeItems.push({
