@@ -242,11 +242,16 @@ jobs:
           # If we have a tag, fetch the release date from the GitHub API
           if [ -n "$TAG_NAME" ]; then
             echo "Fetching release date for tag: $TAG_NAME"
+            
+            REF_JSON=$(curl -s -H "Authorization: Bearer ${{ github.token }}" \
+              "https://api.github.com/repos/swiftlang/swift-book/git/refs/tags/$TAG_NAME")
+            TAG_URL=$(echo "$REF_JSON" | jq -r '.object.url')
+            
             RELEASE_JSON=$(curl -s -H "Authorization: Bearer ${{ github.token }}" \
-              "https://api.github.com/repos/swiftlang/swift-book/git/tags/$LATEST_SHA_LOCAL")
+              "$TAG_URL")
             
             # Extract the published date from the release
-            RELEASE_DATE=$(echo "$RELEASE_JSON" | jq -r '.published_at')
+            RELEASE_DATE=$(jq -r '.tagger.date' <<< "$RELEASE_JSON")
             if [ "$RELEASE_DATE" != "null" ] && [ -n "$RELEASE_DATE" ]; then
               FORMATTED_DATE=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$RELEASE_DATE" '+%B %d, %Y' 2>/dev/null || echo "$RELEASE_DATE")
               echo "Release date: $FORMATTED_DATE"
