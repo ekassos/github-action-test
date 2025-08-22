@@ -213,7 +213,7 @@ jobs:
           echo "Commit date (raw): $COMMIT_DATE_RAW"
           
           # Format commit date for display
-          COMMIT_DATE=$(date -d "$COMMIT_DATE_RAW" '+%B %d, %Y' 2>/dev/null || echo "$COMMIT_DATE_RAW")
+          COMMIT_DATE=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE_RAW" '+%B %d, %Y' 2>/dev/null || echo "$COMMIT_DATE_RAW")
           echo "Commit date (formatted): $COMMIT_DATE"
           
           # Export as env vars
@@ -243,13 +243,12 @@ jobs:
           if [ -n "$TAG_NAME" ]; then
             echo "Fetching release date for tag: $TAG_NAME"
             RELEASE_JSON=$(curl -s -H "Authorization: Bearer ${{ github.token }}" \
-              "https://api.github.com/repos/swiftlang/swift-book/releases/tags/$TAG_NAME")
+              "https://api.github.com/repos/swiftlang/swift-book/git/tags/$LATEST_SHA_LOCAL")
             
             # Extract the published date from the release
             RELEASE_DATE=$(echo "$RELEASE_JSON" | jq -r '.published_at')
             if [ "$RELEASE_DATE" != "null" ] && [ -n "$RELEASE_DATE" ]; then
-              # Format the date for display (convert ISO 8601 to readable format)
-              FORMATTED_DATE=$(date -d "$RELEASE_DATE" '+%B %d, %Y' 2>/dev/null || echo "$RELEASE_DATE")
+              FORMATTED_DATE=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$RELEASE_DATE" '+%B %d, %Y' 2>/dev/null || echo "$RELEASE_DATE")
               echo "Release date: $FORMATTED_DATE"
               echo "RELEASE_DATE=$RELEASE_DATE" >> $GITHUB_ENV
               echo "FORMATTED_DATE=$FORMATTED_DATE" >> $GITHUB_ENV
@@ -259,7 +258,7 @@ jobs:
               echo "No release date found, using commit date instead"
               # Fallback to commit date if no release date is found
               COMMIT_DATE=$(echo "$COMMIT_JSON" | jq -r '.commit.author.date')
-              FORMATTED_DATE=$(date -d "$COMMIT_DATE" '+%B %d, %Y' 2>/dev/null || echo "$COMMIT_DATE")
+              FORMATTED_DATE=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE" '+%B %d, %Y' 2>/dev/null || echo "$COMMIT_DATE")
               echo "Commit date: $FORMATTED_DATE"
               echo "RELEASE_DATE=$COMMIT_DATE" >> $GITHUB_ENV
               echo "FORMATTED_DATE=$FORMATTED_DATE" >> $GITHUB_ENV
