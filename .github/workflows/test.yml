@@ -216,7 +216,7 @@ jobs:
           echo "Commit date (raw): $COMMIT_DATE_RAW"
           
           # Format commit date for display
-                     COMMIT_DATE=$(TZ='America/Los_Angeles' date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE_RAW" '+%B %d, %Y at %-I:%M %p PT' 2>/dev/null || echo "$COMMIT_DATE_RAW") 
+          COMMIT_DATE=$(TZ='America/Los_Angeles' date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE_RAW" '+%B %d, %Y at %-I:%M %p PT' 2>/dev/null || echo "$COMMIT_DATE_RAW") 
           echo "Commit date (formatted): $COMMIT_DATE"
           
           # Export as env vars
