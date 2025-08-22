@@ -1,13 +1,20 @@
 name: Generate Swift Book PDFs
 
 on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Optional specific commit SHA of swift-book to build from'
+        required: false
   schedule:
-    - cron: '58 * * * *'  # Every hour at :50
+    - cron: '50 * * * *'  # Every hour at :50
 
 jobs:
   generate-pdfs:
     runs-on: ubuntu-latest
     steps:
+        - run: date -u && git rev-parse --abbrev-ref HEAD
+
         - name: Checkout repository
           uses: actions/checkout@v4
   
