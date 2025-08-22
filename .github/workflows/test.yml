@@ -230,32 +230,6 @@ jobs:
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Download SF Pro Fonts DMG
-        if: steps.check_sha.outputs.skip != 'true'
-        run: curl -L -o SF-Pro.dmg https://developer.apple.com/download/files/SF-Pro.dmg
-
-      - name: Mount DMG and install SF Pro fonts
-        if: steps.check_sha.outputs.skip != 'true'
-        run: |
-          # Mount the DMG
-          hdiutil attach SF-Pro.dmg -mountpoint /Volumes/SFPro
-
-          # Install the SF Pro Fonts package system-wide
-          sudo installer -pkg "/Volumes/SFPro/SF Pro Fonts.pkg" -target /
-
-          # Detach DMG
-          hdiutil detach /Volumes/SFPro
-
-      - name: Set up Python
-        if: steps.check_sha.outputs.skip != 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Install Python dependencies
-        if: steps.check_sha.outputs.skip != 'true'
-        run: |
-          python -m pip install swift-book-pdf
 
       - name: Install TeX Live (cached)
         if: steps.check_sha.outputs.skip != 'true'
