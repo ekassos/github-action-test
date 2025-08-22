@@ -475,116 +475,137 @@ jobs:
 
           echo "All PDFs generated successfully!"
 
-      - name: Commit and push PDFs to repository
+      - name: Commit and push PDFs via GitHub API (single commit, binary-safe, skip unchanged)
         if: steps.check_sha.outputs.skip != 'true'
-        run: |
-          # Move latest SHA file
-          mv latest-swift-book-sha-latest.txt .github/sha
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const path = require("path");
 
-          # Prepare commit message
-          COMMIT_MSG=$(printf "Swift Book upstream: %s\n%s\n\nUpstream commit: https://github.com/swiftlang/swift-book/commit/%s" "$LATEST_SHA_SHORT" "$LATEST_MSG" "$LATEST_SHA")
-          
-          # Debug: show commit message and variables
-          echo "Commit message:"
-          echo "$COMMIT_MSG"
-          echo "Branch: $BRANCH_NAME"
-          echo "Latest SHA: $LATEST_SHA"
-          echo "Latest SHA Short: $LATEST_SHA_SHORT"
-          echo "Latest Message: $LATEST_MSG"
-          
-          # Get current branch name
-          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
-          
-          # Function to commit a file using GitHub API
-          commit_file() {
-            local file_path="$1"
-            local content
-            local filename
-            local sha
-            
-            # Base64 encode the file content (macOS compatible)
-            content=$(base64 -i "$file_path" | tr -d '\n')
-            filename=$(basename "$file_path")
-            
-            # Get current SHA if file exists
-            sha=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/${{ github.repository }}/contents/$file_path?ref=$BRANCH_NAME" | jq -r .sha)
-            
-            if [ "$sha" == "null" ]; then
-              sha=""
-            fi
-            
-            # Commit the file using jq to properly escape JSON
-            echo "Committing $file_path..."
-            if [ -n "$sha" ]; then
-              # File exists, include SHA for update
-              json_payload=$(jq -n \
-                --arg message "$COMMIT_MSG" \
-                --arg content "$content" \
-                --arg branch "$BRANCH_NAME" \
-                --arg sha "$sha" \
-                '{"message": $message, "content": $content, "branch": $branch, "sha": $sha}')
-              echo "Updating existing file with SHA: $sha"
-            else
-              # New file, don't include SHA
-              json_payload=$(jq -n \
-                --arg message "$COMMIT_MSG" \
-                --arg content "$content" \
-                --arg branch "$BRANCH_NAME" \
-                '{"message": $message, "content": $content, "branch": $branch}')
-              echo "Creating new file"
-            fi
-            
-            # Debug: show JSON structure (without content)
-            debug_json=$(echo "$json_payload" | jq 'del(.content)')
-            echo "JSON payload structure: $debug_json"
-            
-            response=$(curl -s -w "%{http_code}" -X PUT -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: application/json" \
-              -d "$json_payload" \
-              "https://api.github.com/repos/${{ github.repository }}/contents/$file_path")
-            
-            # Extract status code and response body
-            http_code="${response: -3}"
-            response_body="${response%???}"
-            
-            if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 201 ]; then
-              echo "✅ Successfully committed $file_path"
-            else
-              echo "❌ Failed to commit $file_path (HTTP $http_code):"
-              echo "$response_body"
-              exit 1
-            fi
-          }
-          
-          # Commit PDFs
-          echo "Committing PDFs from swift-book/latest/..."
-          for pdf in swift-book/latest/*.pdf; do
-            if [ -f "$pdf" ]; then
-              echo "Processing: $pdf"
-              commit_file "$pdf"
-            fi
-          done
-          
-          # Commit tagged PDFs if they exist
-          if [ -n "${{ steps.swiftbook_sha.outputs.tag_name }}" ]; then
-            echo "Committing PDFs from swift-book/${{ steps.swiftbook_sha.outputs.tag_name }}/..."
-            for pdf in swift-book/${{ steps.swiftbook_sha.outputs.tag_name }}/*.pdf; do
-              if [ -f "$pdf" ]; then
-                echo "Processing: $pdf"
-                commit_file "$pdf"
-              fi
-            done
-          fi
-          
-          # Commit the SHA file
-          echo "Committing SHA file..."
-          commit_file ".github/sha"
-          
-          echo "✅ All files committed successfully!"
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const branch = process.env.GITHUB_REF.replace("refs/heads/", "");
+
+            // Build commit message
+            const shaShort = process.env.LATEST_SHA_SHORT;
+            const latestMsg = process.env.LATEST_MSG;
+            const latestSha = process.env.LATEST_SHA;
+
+            const commitMessage = `Swift Book upstream: ${shaShort}
+            ${latestMsg}
+
+            Upstream commit: https://github.com/swiftlang/swift-book/commit/${latestSha}`;
+
+            // Collect files -> will become tree entries
+            const treeEntries = [];
+
+            async function addFile(filePath) {
+              const contentBase64 = fs.readFileSync(filePath).toString("base64");
+
+              // Create blob
+              const { data: blob } = await github.rest.git.createBlob({
+                owner,
+                repo,
+                content: contentBase64,
+                encoding: "base64",
+              });
+
+              treeEntries.push({
+                path: filePath,
+                mode: "100644",
+                type: "blob",
+                sha: blob.sha,
+              });
+            }
+
+            // Always include sha file
+            await addFile(".github/sha");
+
+            // PDFs in latest/
+            const latestDir = "swift-book/latest";
+            if (fs.existsSync(latestDir)) {
+              for (const file of fs.readdirSync(latestDir)) {
+                if (file.endsWith(".pdf")) {
+                  await addFile(path.join(latestDir, file));
+                }
+              }
+            }
+
+            // PDFs in tag folder
+            const tagName = process.env.TAG_NAME;
+            if (tagName) {
+              const tagDir = `swift-book/${tagName}`;
+              if (fs.existsSync(tagDir)) {
+                for (const file of fs.readdirSync(tagDir)) {
+                  if (file.endsWith(".pdf")) {
+                    await addFile(path.join(tagDir, file));
+                  }
+                }
+              }
+            }
+
+            if (treeEntries.length === 0) {
+              console.log("No files found to commit");
+              return;
+            }
+
+            // 1. Get reference to current branch
+            const { data: refData } = await github.rest.git.getRef({
+              owner,
+              repo,
+              ref: `heads/${branch}`,
+            });
+
+            const latestCommitSha = refData.object.sha;
+
+            // 2. Get commit object (to retrieve tree)
+            const { data: commitData } = await github.rest.git.getCommit({
+              owner,
+              repo,
+              commit_sha: latestCommitSha,
+            });
+
+            const baseTree = commitData.tree.sha;
+
+            // 3. Create new tree
+            const { data: newTree } = await github.rest.git.createTree({
+              owner,
+              repo,
+              base_tree: baseTree,
+              tree: treeEntries,
+            });
+
+            // 4. Check if new tree is identical to base
+            if (newTree.sha === baseTree) {
+              console.log("No changes detected — skipping commit");
+              return;
+            }
+
+            // 5. Create new commit
+            const { data: newCommit } = await github.rest.git.createCommit({
+              owner,
+              repo,
+              message: commitMessage,
+              tree: newTree.sha,
+              parents: [latestCommitSha],
+            });
+
+            // 6. Update branch ref
+            await github.rest.git.updateRef({
+              owner,
+              repo,
+              ref: `heads/${branch}`,
+              sha: newCommit.sha,
+            });
+
+            console.log("Commit created:", newCommit.sha);
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  
+          LATEST_SHA_SHORT: ${{ env.LATEST_SHA_SHORT }}
+          LATEST_MSG: ${{ env.LATEST_MSG }}
+          LATEST_SHA: ${{ env.LATEST_SHA }}
+          TAG_NAME: ${{ steps.swiftbook_sha.outputs.tag_name }}
+
       - name: Tag commit if upstream is tagged
         if: steps.check_sha.outputs.skip != 'true' && steps.swiftbook_sha.outputs.TAG_NAME != ''
         run: |
