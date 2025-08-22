@@ -300,13 +300,58 @@ jobs:
             fi
           }
 
+          # Helper function to check if LaTeX compilation succeeded
+          check_latex_success() {
+            local tex_file="$1"
+            local pdf_file="${tex_file%.tex}.pdf"
+            if [ -f "$pdf_file" ]; then
+              echo "✅ Successfully generated: $pdf_file"
+              return 0
+            else
+              echo "❌ Failed to generate: $pdf_file"
+              # Show the last few lines of the log file for debugging
+              local log_file="${tex_file%.tex}.log"
+              if [ -f "$log_file" ]; then
+                echo "Last 10 lines of $log_file:"
+                tail -10 "$log_file"
+              fi
+              return 1
+            fi
+          }
+
+          # Function to compile LaTeX with error handling
+          compile_latex() {
+            local tex_file="$1"
+            local output_dir="swift-book/latest"
+            echo "Compiling $tex_file..."
+            
+            # First compilation
+            if ! run_quiet pdflatex -output-directory="$output_dir" "$tex_file"; then
+              echo "❌ First pdflatex run failed for $tex_file"
+              return 1
+            fi
+            
+            # Second compilation to resolve references
+            if ! run_quiet pdflatex -output-directory="$output_dir" "$tex_file"; then
+              echo "❌ Second pdflatex run failed for $tex_file"
+              return 1
+            fi
+            
+            # Check if PDF was generated
+            if check_latex_success "$tex_file"; then
+              return 0
+            else
+              return 1
+            fi
+          }
+
           # Generate digital light mode PDF
           echo "Generating digital light mode PDF..."
           cat > swift-book/latest/swift_book_digital.tex << 'EOF'
           \documentclass[12pt]{article}
-          \usepackage[utf8]{inputenc}
           \usepackage{geometry}
           \usepackage{hyperref}
+          \usepackage{parskip}
           \geometry{margin=1in}
           \title{Swift Book - Digital Edition}
           \author{Swift Documentation}
@@ -319,18 +364,16 @@ jobs:
           Sample content for testing purposes.
           \end{document}
           EOF
-          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_digital.tex
-          # Run pdflatex twice to resolve references
-          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_digital.tex
+          compile_latex "swift-book/latest/swift_book_digital.tex"
 
           # Generate digital dark mode PDF
           echo "Generating digital dark mode PDF..."
           cat > swift-book/latest/swift_book_digital_dark.tex << 'EOF'
           \documentclass[12pt]{article}
-          \usepackage[utf8]{inputenc}
           \usepackage{geometry}
           \usepackage{hyperref}
           \usepackage{xcolor}
+          \usepackage{parskip}
           \pagecolor{black}
           \color{white}
           \geometry{margin=1in}
@@ -345,17 +388,15 @@ jobs:
           Sample content for testing purposes.
           \end{document}
           EOF
-          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_digital_dark.tex
-          # Run pdflatex twice to resolve references
-          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_digital_dark.tex
+          compile_latex "swift-book/latest/swift_book_digital_dark.tex"
 
           # Generate print light mode PDF
           echo "Generating print light mode PDF..."
           cat > swift-book/latest/swift_book_print.tex << 'EOF'
           \documentclass[12pt]{article}
-          \usepackage[utf8]{inputenc}
           \usepackage{geometry}
           \usepackage{hyperref}
+          \usepackage{parskip}
           \geometry{margin=1.5in}
           \title{Swift Book - Print Edition}
           \author{Swift Documentation}
@@ -368,18 +409,16 @@ jobs:
           Sample content for testing purposes.
           \end{document}
           EOF
-          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_print.tex
-          # Run pdflatex twice to resolve references
-          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_print.tex
+          compile_latex "swift-book/latest/swift_book_print.tex"
 
           # Generate print dark mode PDF
           echo "Generating print dark mode PDF..."
           cat > swift-book/latest/swift_book_print_dark.tex << 'EOF'
           \documentclass[12pt]{article}
-          \usepackage{utf8]{inputenc}
           \usepackage{geometry}
           \usepackage{hyperref}
           \usepackage{xcolor}
+          \usepackage{parskip}
           \pagecolor{black}
           \color{white}
           \geometry{margin=1.5in}
@@ -394,13 +433,15 @@ jobs:
           Sample content for testing purposes.
           \end{document}
           EOF
-          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_print_dark.tex
-          # Run pdflatex twice to resolve references
-          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_print_dark.tex
+          compile_latex "swift-book/latest/swift_book_print_dark.tex"
 
           # List generated files for debugging
           echo "Files in swift-book/latest/:"
           ls -la swift-book/latest/
+
+          # Check for LaTeX auxiliary files and logs for debugging
+          echo "LaTeX auxiliary files:"
+          ls -la swift-book/latest/*.aux swift-book/latest/*.log 2>/dev/null || echo "No auxiliary files found"
 
           # Verify PDFs were generated
           PDF_COUNT=$(ls swift-book/latest/*.pdf 2>/dev/null | wc -l)
@@ -408,6 +449,14 @@ jobs:
           
           if [ "$PDF_COUNT" -eq 0 ]; then
             echo "❌ No PDF files were generated!"
+            echo "Checking for LaTeX errors in log files:"
+            for log_file in swift-book/latest/*.log; do
+              if [ -f "$log_file" ]; then
+                echo "=== Contents of $log_file ==="
+                cat "$log_file" | tail -20
+                echo "=== End of $log_file ==="
+              fi
+            done
             exit 1
           fi
 
