@@ -6,8 +6,6 @@ on:
       sha:
         description: 'Optional specific commit SHA of swift-book to build from'
         required: false
-  schedule:
-    - cron: '*/5 * * * *'  # Every 5 minutes
 
 jobs:
   generate-pdfs:
@@ -16,5 +14,29 @@ jobs:
 
         - name: Checkout repository
           uses: actions/checkout@v4
+          with:
+            token: ${{ secrets.GITHUB_TOKEN }}
+            
+        - name: Configure Git for GitHub Actions bot
+          run: |
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            
+        - name: Make sample commit
+          run: |
+            # Create or update a sample file
+            echo "Last updated: $(date)" > sample-commit.txt
+            
+            # Stage the file
+            git add sample-commit.txt
+            
+            # Make a signed commit
+            # GitHub Actions automatically signs commits when using the bot identity
+            git commit -m "chore: automated sample commit by GitHub Actions bot
+            
+            This commit was automatically generated and signed by the GitHub Actions bot.
+            Timestamp: $(date)"
+            
+            # Push the commit
+            git push origin main
         
-        - run: date -u && git rev-parse --abbrev-ref HEAD
