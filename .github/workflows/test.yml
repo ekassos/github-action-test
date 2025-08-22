@@ -522,13 +522,10 @@ jobs:
 
             // Always include sha file
             const shaSrc = "latest-swift-book-sha-latest.txt";
-            const shaDest = ".github/sha/latest.txt";
+            const shaDest = ".github/sha";
 
-            // Ensure destination folder exists
-            fs.mkdirSync(path.dirname(shaDest), { recursive: true });
-
-            // Move/overwrite the file inside .github/sha
-            fs.renameSync(shaSrc, shaDest);
+            // Overwrite/replace the .github/sha file
+            fs.copyFileSync(shaSrc, shaDest);
 
             // Add the file to the tree
             await addFile(shaDest);
