@@ -486,7 +486,6 @@ jobs:
             // Move latest SHA file
             const fs = require('fs');
             const path = require('path');
-            const core = require('@actions/core');
             
             // Read the latest SHA file
             const latestShaFile = 'latest-swift-book-sha-latest.txt';
