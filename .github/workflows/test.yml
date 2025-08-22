@@ -21,6 +21,9 @@ on:
         description: 'Optional specific commit SHA of swift-book to build from'
         required: false
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
 jobs:
   generate-pdfs:
     runs-on: macos-latest
@@ -213,7 +216,7 @@ jobs:
           echo "Commit date (raw): $COMMIT_DATE_RAW"
           
           # Format commit date for display
-          COMMIT_DATE=$(TZ='America/Los_Angeles' date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE_RAW" '+%B %d, %Y at %l:%M %p PT' 2>/dev/null || echo "$COMMIT_DATE_RAW") 
+                     COMMIT_DATE=$(TZ='America/Los_Angeles' date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE_RAW" '+%B %d, %Y at %-I:%M %p PT' 2>/dev/null || echo "$COMMIT_DATE_RAW") 
           echo "Commit date (formatted): $COMMIT_DATE"
           
           # Export as env vars
@@ -254,7 +257,7 @@ jobs:
             RELEASE_DATE=$(jq -r '.tagger.date' <<< "$RELEASE_JSON")
             TAGGED_MSG=$(jq -r '.message' <<< "$RELEASE_JSON")
             if [ "$RELEASE_DATE" != "null" ] && [ -n "$RELEASE_DATE" ]; then
-              TAGGED_DATE=$(TZ='America/Los_Angeles' date -j -f "%Y-%m-%dT%H:%M:%SZ" "$RELEASE_DATE" '+%B %d, %Y at %l:%M %p PT' 2>/dev/null || echo "$RELEASE_DATE")
+              TAGGED_DATE=$(TZ='America/Los_Angeles' date -j -f "%Y-%m-%dT%H:%M:%SZ" "$RELEASE_DATE" '+%B %d, %Y at %-I:%M %p PT' 2>/dev/null || echo "$RELEASE_DATE")
               echo "Release date: $TAGGED_DATE"
               echo "RELEASE_DATE=$RELEASE_DATE" >> $GITHUB_ENV
               echo "TAGGED_DATE=$TAGGED_DATE" >> $GITHUB_ENV
@@ -270,7 +273,7 @@ jobs:
               echo "No release date found, using commit date instead"
               # Fallback to commit date if no release date is found
               COMMIT_DATE=$(echo "$COMMIT_JSON" | jq -r '.commit.author.date')
-              TAGGED_DATE=$(TZ='America/Los_Angeles' date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE" '+%B %d, %Y at %l:%M %p PT' 2>/dev/null || echo "$COMMIT_DATE")
+                             TAGGED_DATE=$(TZ='America/Los_Angeles' date -j -f "%Y-%m-%dT%H:%M:%SZ" "$COMMIT_DATE" '+%B %d, %Y at %-I:%M %p PT' 2>/dev/null || echo "$COMMIT_DATE")
               echo "Commit date: $TAGGED_DATE"
               echo "RELEASE_DATE=$COMMIT_DATE" >> $GITHUB_ENV
               echo "TAGGED_DATE=$TAGGED_DATE" >> $GITHUB_ENV
@@ -702,7 +705,7 @@ jobs:
               message: `Swift Book upstream tag ${tagName}
             Originally tagged on ${taggedDate}.
             
-            ${taggedMsg}`,
+            ${taggedMsg}\n`,
               object: commitSha,
               type: "commit",
               tagger: {
