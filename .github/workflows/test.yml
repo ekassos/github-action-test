@@ -495,7 +495,7 @@ jobs:
             local sha
             
             # Base64 encode the file content (macOS compatible)
-            content=$(base64 "$file_path" | tr -d '\n')
+            content=$(base64 -i "$file_path" | tr -d '\n')
             filename=$(basename "$file_path")
             
             # Get current SHA if file exists
