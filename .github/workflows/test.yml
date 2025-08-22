@@ -521,7 +521,17 @@ jobs:
             }
 
             // Always include sha file
-            await addFile(".github/sha");
+            const shaSrc = "latest-swift-book-sha-latest.txt";
+            const shaDest = ".github/sha/latest.txt";
+
+            // Ensure destination folder exists
+            fs.mkdirSync(path.dirname(shaDest), { recursive: true });
+
+            // Move/overwrite the file inside .github/sha
+            fs.renameSync(shaSrc, shaDest);
+
+            // Add the file to the tree
+            await addFile(shaDest);
 
             // PDFs in latest/
             const latestDir = "swift-book/latest";
