@@ -1,13 +1,8 @@
 name: Generate Swift Book PDFs
 
 on:
-  workflow_dispatch:
-    inputs:
-      sha:
-        description: 'Optional specific commit SHA of swift-book to build from'
-        required: false
   schedule:
-    - cron: '50 * * * *'  # Every hour at :50
+    - cron: '58 * * * *'  # Every hour at :50
 
 jobs:
   generate-pdfs:
