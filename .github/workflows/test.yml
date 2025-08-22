@@ -285,3 +285,411 @@ jobs:
             echo "❌ LaTeX installation failed"
             exit 1
           fi
+
+      - name: Generate PDFs
+        if: steps.check_sha.outputs.skip != 'true'
+        run: |
+          mkdir -p swift-book/latest
+
+          # Helper function to run commands quietly unless debug is enabled
+          run_quiet() {
+            if [ "$ACTIONS_STEP_DEBUG" = "true" ]; then
+              "$@"
+            else
+              # Capture stderr to check for errors
+              if ! "$@" > /dev/null 2>temp_error.log; then
+                echo "❌ Command failed: $*"
+                echo "Error output:"
+                cat temp_error.log
+                rm -f temp_error.log
+                exit 1
+              fi
+              rm -f temp_error.log
+            fi
+          }
+
+          # Generate digital light mode PDF
+          echo "Generating digital light mode PDF..."
+          cat > swift-book/latest/swift_book_digital.tex << 'EOF'
+          \documentclass[12pt]{article}
+          \usepackage[utf8]{inputenc}
+          \usepackage{geometry}
+          \usepackage{hyperref}
+          \geometry{margin=1in}
+          \title{Swift Book - Digital Edition}
+          \author{Swift Documentation}
+          \date{\today}
+          \begin{document}
+          \maketitle
+          \section{Introduction}
+          This is a test PDF generated from LaTeX instead of swift-book-pdf.
+          \section{Content}
+          Sample content for testing purposes.
+          \end{document}
+          EOF
+          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_digital.tex
+          # Run pdflatex twice to resolve references
+          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_digital.tex
+
+          # Generate digital dark mode PDF
+          echo "Generating digital dark mode PDF..."
+          cat > swift-book/latest/swift_book_digital_dark.tex << 'EOF'
+          \documentclass[12pt]{article}
+          \usepackage[utf8]{inputenc}
+          \usepackage{geometry}
+          \usepackage{hyperref}
+          \usepackage{xcolor}
+          \pagecolor{black}
+          \color{white}
+          \geometry{margin=1in}
+          \title{Swift Book - Digital Dark Edition}
+          \author{Swift Documentation}
+          \date{\today}
+          \begin{document}
+          \maketitle
+          \section{Introduction}
+          This is a test dark mode PDF generated from LaTeX instead of swift-book-pdf.
+          \section{Content}
+          Sample content for testing purposes.
+          \end{document}
+          EOF
+          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_digital_dark.tex
+          # Run pdflatex twice to resolve references
+          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_digital_dark.tex
+
+          # Generate print light mode PDF
+          echo "Generating print light mode PDF..."
+          cat > swift-book/latest/swift_book_print.tex << 'EOF'
+          \documentclass[12pt]{article}
+          \usepackage[utf8]{inputenc}
+          \usepackage{geometry}
+          \usepackage{hyperref}
+          \geometry{margin=1.5in}
+          \title{Swift Book - Print Edition}
+          \author{Swift Documentation}
+          \date{\today}
+          \begin{document}
+          \maketitle
+          \section{Introduction}
+          This is a test print PDF generated from LaTeX instead of swift-book-pdf.
+          \section{Content}
+          Sample content for testing purposes.
+          \end{document}
+          EOF
+          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_print.tex
+          # Run pdflatex twice to resolve references
+          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_print.tex
+
+          # Generate print dark mode PDF
+          echo "Generating print dark mode PDF..."
+          cat > swift-book/latest/swift_book_print_dark.tex << 'EOF'
+          \documentclass[12pt]{article}
+          \usepackage{utf8]{inputenc}
+          \usepackage{geometry}
+          \usepackage{hyperref}
+          \usepackage{xcolor}
+          \pagecolor{black}
+          \color{white}
+          \geometry{margin=1.5in}
+          \title{Swift Book - Print Dark Edition}
+          \author{Swift Documentation}
+          \date{\today}
+          \begin{document}
+          \maketitle
+          \section{Introduction}
+          This is a test print dark mode PDF generated from LaTeX instead of swift-book-pdf.
+          \section{Content}
+          Sample content for testing purposes.
+          \end{document}
+          EOF
+          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_print_dark.tex
+          # Run pdflatex twice to resolve references
+          run_quiet pdflatex -output-directory=swift-book/latest swift-book/latest/swift_book_print_dark.tex
+
+          # List generated files for debugging
+          echo "Files in swift-book/latest/:"
+          ls -la swift-book/latest/
+
+          # Verify PDFs were generated
+          PDF_COUNT=$(ls swift-book/latest/*.pdf 2>/dev/null | wc -l)
+          echo "Generated $PDF_COUNT PDF files"
+          
+          if [ "$PDF_COUNT" -eq 0 ]; then
+            echo "❌ No PDF files were generated!"
+            exit 1
+          fi
+
+          # If this commit has a tag, also copy PDFs into that tag folder
+          if [ -n "${{ steps.swiftbook_sha.outputs.tag_name }}" ]; then
+            TAG_DIR="swift-book/${{ steps.swiftbook_sha.outputs.tag_name }}"
+            mkdir -p "$TAG_DIR"
+            echo "Copying PDFs from swift-book/latest/ to $TAG_DIR/"
+            echo "Source files:"
+            ls -la swift-book/latest/*.pdf
+            cp swift-book/latest/*.pdf "$TAG_DIR"/
+            echo "Also copied PDFs to $TAG_DIR"
+            echo "Files in $TAG_DIR:"
+            ls -la "$TAG_DIR"
+          fi
+
+          echo "All PDFs generated successfully!"
+
+      - name: Commit and push PDFs to repository via GitHub API
+        id: commit-pdfs
+        if: steps.check_sha.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const date = new Date().toISOString();
+            
+            // Move latest SHA file
+            const fs = require('fs');
+            const path = require('path');
+            const core = require('@actions/core');
+            
+            // Read the latest SHA file
+            const latestShaFile = 'latest-swift-book-sha-latest.txt';
+            let latestSha;
+            try {
+              latestSha = fs.readFileSync(latestShaFile, 'utf8').trim();
+            } catch (error) {
+              console.log('No latest SHA file found');
+              return;
+            }
+            
+            // Move SHA file to .github/sha
+            const targetShaPath = '.github/sha';
+            fs.mkdirSync(path.dirname(targetShaPath), { recursive: true });
+            fs.writeFileSync(targetShaPath, latestSha);
+            
+            // Prepare commit message
+            const commitMsg = `Swift Book upstream: ${process.env.LATEST_SHA_SHORT}\n${process.env.LATEST_MSG}\n\nUpstream commit: https://github.com/swiftlang/swift-book/commit/${process.env.LATEST_SHA}`;
+            
+            // Get current tree SHA
+            const { data: currentTree } = await github.rest.git.getTree({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tree_sha: context.sha,
+              recursive: true
+            });
+            
+            // Create new tree with updated files
+            const treeItems = [];
+            
+            // Add SHA file
+            const shaContent = fs.readFileSync(targetShaPath, 'utf8');
+            const shaBlob = await github.rest.git.createBlob({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              content: shaContent,
+              encoding: 'utf-8'
+            });
+            treeItems.push({
+              path: targetShaPath,
+              mode: '100644',
+              type: 'blob',
+              sha: shaBlob.data.sha
+            });
+            
+            // Add PDF files from latest directory
+            const latestPdfDir = 'swift-book/latest';
+            console.log(`Checking for PDFs in: ${latestPdfDir}`);
+            if (fs.existsSync(latestPdfDir)) {
+              const allFiles = fs.readdirSync(latestPdfDir);
+              console.log(`All files in ${latestPdfDir}:`, allFiles);
+              const pdfFiles = allFiles.filter(file => file.endsWith('.pdf'));
+              console.log(`PDF files found:`, pdfFiles);
+              for (const pdfFile of pdfFiles) {
+                const pdfPath = path.join(latestPdfDir, pdfFile);
+                console.log(`Processing PDF: ${pdfPath}`);
+                try {
+                  const pdfContent = fs.readFileSync(pdfPath);
+                  const pdfBlob = await github.rest.git.createBlob({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    content: pdfContent,
+                    encoding: 'base64'
+                  });
+                  treeItems.push({
+                    path: pdfPath,
+                    mode: '100644',
+                    type: 'blob',
+                    sha: pdfBlob.data.sha
+                  });
+                  console.log(`Successfully added PDF: ${pdfPath}`);
+                } catch (error) {
+                  console.log(`Error processing PDF ${pdfPath}:`, error.message);
+                }
+              }
+            } else {
+              console.log(`Directory ${latestPdfDir} does not exist`);
+            }
+            
+            // Add PDF files from tag directory if it exists
+            const tagName = process.env.TAG_NAME;
+            if (tagName) {
+              const tagPdfDir = `swift-book/${tagName}`;
+              console.log(`Checking for PDFs in tag directory: ${tagPdfDir}`);
+              if (fs.existsSync(tagPdfDir)) {
+                const allTagFiles = fs.readdirSync(tagPdfDir);
+                console.log(`All files in tag directory:`, allTagFiles);
+                const tagPdfFiles = allTagFiles.filter(file => file.endsWith('.pdf'));
+                console.log(`PDF files in tag directory:`, tagPdfFiles);
+                for (const pdfFile of tagPdfFiles) {
+                  const pdfPath = path.join(tagPdfDir, pdfFile);
+                  console.log(`Processing tag PDF: ${pdfPath}`);
+                  try {
+                    const pdfContent = fs.readFileSync(pdfPath);
+                    const pdfBlob = await github.rest.git.createBlob({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      content: pdfContent,
+                      encoding: 'base64'
+                    });
+                    treeItems.push({
+                      path: pdfPath,
+                      mode: '100644',
+                      type: 'blob',
+                      sha: pdfBlob.data.sha
+                    });
+                    console.log(`Successfully added tag PDF: ${pdfPath}`);
+                  } catch (error) {
+                    console.log(`Error processing tag PDF ${pdfPath}:`, error.message);
+                  }
+                }
+              } else {
+                console.log(`Tag directory ${tagPdfDir} does not exist`);
+              }
+            } else {
+              console.log('No tag name provided, skipping tag directory processing');
+            }
+            
+            // Create new tree
+            const newTree = await github.rest.git.createTree({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tree: treeItems,
+              base_tree: currentTree.data.sha
+            });
+            
+            // Create commit
+            const commit = await github.rest.git.createCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              message: commitMsg,
+              tree: newTree.data.sha,
+              parents: [context.sha]
+            });
+            
+            // Update the branch reference
+            await github.rest.git.updateRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `heads/${context.ref.replace('refs/heads/', '')}`,
+              sha: commit.data.sha
+            });
+            
+            console.log('Commit created:', commit.data.sha);
+            console.log('Commit author:', commit.data.author);
+            console.log('Commit verification:', commit.data.verification);
+            
+            // Store the new commit SHA for potential use in later steps
+            core.setOutput('new_commit_sha', commit.data.sha);
+        env:
+          LATEST_SHA_SHORT: ${{ steps.swiftbook_sha.outputs.latest_sha }}
+          LATEST_MSG: ${{ steps.swiftbook_sha.outputs.latest_msg }}
+          LATEST_SHA: ${{ steps.swiftbook_sha.outputs.latest_sha }}
+          TAG_NAME: ${{ steps.swiftbook_sha.outputs.tag_name }}
+
+      - name: Tag commit if upstream is tagged
+        if: steps.check_sha.outputs.skip != 'true' && steps.swiftbook_sha.outputs.tag_name != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const core = require('@actions/core');
+            
+            const tagName = process.env.TAG_NAME;
+            if (!tagName) {
+              console.log('No tag name provided, skipping tag creation');
+              return;
+            }
+            
+            // Get the commit SHA from the previous step output
+            const commitSha = process.env.NEW_COMMIT_SHA;
+            if (!commitSha) {
+              console.log('No commit SHA available, skipping tag creation');
+              return;
+            }
+            
+            try {
+              // Create the tag
+              const tag = await github.rest.git.createTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tagName,
+                message: `Release ${tagName}`,
+                object: commitSha,
+                type: 'commit'
+              });
+              
+              // Create the tag reference
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/tags/${tagName}`,
+                sha: tag.data.sha
+              });
+              
+              console.log(`Tag ${tagName} created successfully:`, tag.data.sha);
+            } catch (error) {
+              console.log(`Error creating tag ${tagName}:`, error.message);
+            }
+        env:
+          TAG_NAME: ${{ steps.swiftbook_sha.outputs.tag_name }}
+          NEW_COMMIT_SHA: ${{ steps.commit-pdfs.outputs.new_commit_sha }}
+
+      - name: Debug release files
+        if: steps.check_sha.outputs.skip != 'true' && steps.swiftbook_sha.outputs.tag_name != ''
+        run: |
+          echo "Checking release files..."
+          TAG_DIR="swift-book/${{ steps.swiftbook_sha.outputs.tag_name }}"
+          if [ -d "$TAG_DIR" ]; then
+            echo "Files in $TAG_DIR:"
+            ls -la "$TAG_DIR"
+          else
+            echo "Tag directory $TAG_DIR does not exist"
+          fi
+          
+          echo "Checking latest directory:"
+          if [ -d "swift-book/latest" ]; then
+            echo "Files in swift-book/latest:"
+            ls -la swift-book/latest/
+          else
+            echo "Latest directory does not exist"
+          fi
+          
+          echo "Checking swift-book root:"
+          if [ -d "swift-book" ]; then
+            echo "Contents of swift-book:"
+            find swift-book -type f -name "*.pdf" | head -20
+          else
+            echo "Swift-book directory does not exist"
+          fi
+
+      - name: Create release and upload PDFs if upstream is tagged
+        if: steps.check_sha.outputs.skip != 'true' && steps.swiftbook_sha.outputs.tag_name != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.swiftbook_sha.outputs.tag_name }}
+          name: ${{ steps.swiftbook_sha.outputs.tag_name }}
+          body: |
+            Release for Swift Book upstream tag ${{ steps.swiftbook_sha.outputs.tag_name }}
+
+            https://github.com/swiftlang/swift-book/releases/tag/${{ steps.swiftbook_sha.outputs.tag_name }}
+          files: |
+            swift-book/${{ steps.swiftbook_sha.outputs.tag_name }}/swift_book_digital.pdf
+            swift-book/${{ steps.swiftbook_sha.outputs.tag_name }}/swift_book_digital_dark.pdf
+            swift-book/${{ steps.swiftbook_sha.outputs.tag_name }}/swift_book_print.pdf
+            swift-book/${{ steps.swiftbook_sha.outputs.tag_name }}/swift_book_print_dark.pdf
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
